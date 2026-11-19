@@ -32,7 +32,11 @@ export default auth((req) => {
       isMainDomain = true;
     }
   } else {
-    if (hostParts.length <= 2) {
+    const bareHost = hostname.split(":")[0];
+    if (bareHost.endsWith(".vercel.app")) {
+      // Vercel deployment/preview URLs (e.g. sdpttech.vercel.app) are the main app, not tenant subdomains
+      isMainDomain = true;
+    } else if (hostParts.length <= 2) {
       isMainDomain = true;
     } else if (hostParts.length === 3 && hostParts[0] === "www") {
       isMainDomain = true;
@@ -43,7 +47,10 @@ export default auth((req) => {
 
   if (!isMainDomain && cleanHost && cleanHost !== "www") {
     // Rewrite path to /sites/[subdomain]
-    return NextResponse.rewrite(new URL(`/sites/${cleanHost}${pathname}`, req.url));
+    // Build from the real Host header — req.url may have been replaced by AUTH_URL inside auth()
+    const proto = req.headers.get("x-forwarded-proto") || "https";
+    const rewriteUrl = new URL(`/sites/${cleanHost}${pathname}${req.nextUrl.search}`, `${proto}://${hostname}`);
+    return NextResponse.rewrite(rewriteUrl);
   }
 
   // 3. Admin panel checks (for main domain)
