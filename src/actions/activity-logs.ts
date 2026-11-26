@@ -2,6 +2,7 @@
 
 import dbConnect from "@/lib/mongoose";
 import ActivityLog from "@/models/ActivityLog";
+import mongoose from "mongoose";
 import { auth } from "@/auth";
 import { revalidatePath } from "next/cache";
 
@@ -110,13 +111,18 @@ export async function getActivityLogs({
     ]);
 
     // Action-level summary counts (for stat cards)
-    const [viewCount, editCount, createCount, deleteCount, loginCount] = await Promise.all([
-      ActivityLog.countDocuments({ ...filter, action: "VIEW" }),
-      ActivityLog.countDocuments({ ...filter, action: "UPDATE" }),
-      ActivityLog.countDocuments({ ...filter, action: "CREATE" }),
-      ActivityLog.countDocuments({ ...filter, action: "DELETE" }),
-      ActivityLog.countDocuments({ ...filter, action: "LOGIN" }),
+    // One grouped aggregation instead of five countDocuments round-trips.
+    const grouped: { _id: string; n: number }[] = await ActivityLog.aggregate([
+      // aggregate() does not cast filter values like find() does
+      { $match: { ...filter, ...(filter.adminId ? { adminId: new mongoose.Types.ObjectId(String(filter.adminId)) } : {}) } },
+      { $group: { _id: "$action", n: { $sum: 1 } } },
     ]);
+    const countOf = (a: string) => grouped.find((g) => g._id === a)?.n ?? 0;
+    const viewCount = countOf("VIEW");
+    const editCount = countOf("UPDATE");
+    const createCount = countOf("CREATE");
+    const deleteCount = countOf("DELETE");
+    const loginCount = countOf("LOGIN");
 
     return {
       success: true,

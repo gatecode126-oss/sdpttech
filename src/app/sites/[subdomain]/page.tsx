@@ -15,7 +15,7 @@ export default async function SubdomainPage({ params }: PageProps) {
   const { subdomain } = await params;
 
   await dbConnect();
-  const website = await Website.findOne({ subdomain: subdomain.toLowerCase().trim() });
+  const website = await Website.findOne({ subdomain: subdomain.toLowerCase().trim() }).lean();
 
   if (!website) {
     notFound();

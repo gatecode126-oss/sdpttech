@@ -35,3 +35,9 @@ export async function getCustomers() {
 
   return customersWithStats;
 }
+
+/** Lightweight count for dashboards (avoids loading every customer + order). */
+export async function getCustomerCount() {
+  await dbConnect();
+  return User.countDocuments({ role: "CUSTOMER" });
+}

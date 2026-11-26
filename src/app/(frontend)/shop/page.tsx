@@ -2,6 +2,7 @@ import React, { Suspense } from "react";
 import { getProducts } from "@/actions/product";
 import { getCategories } from "@/actions/category";
 import ShopClient from "./ShopClient";
+import { escapeRegex } from "@/lib/utils";
 
 export default async function ShopPage({
   searchParams,
@@ -10,7 +11,7 @@ export default async function ShopPage({
 }) {
   const resolvedParams = await searchParams;
   const urlCat = resolvedParams.cat || "All";
-  const urlQ = resolvedParams.q || "";
+  const urlQ = (resolvedParams.q || "").slice(0, 100);
 
   // Fetch categories and product data concurrently on the server
   const [categories, productsData] = await Promise.all([
@@ -29,7 +30,7 @@ export default async function ShopPage({
       }
       
       if (urlQ) {
-        query.name = { $regex: urlQ, $options: "i" };
+        query.name = { $regex: escapeRegex(urlQ), $options: "i" };
       }
       
       return getProducts(query, 1, 50);

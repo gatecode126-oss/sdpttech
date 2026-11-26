@@ -7,17 +7,40 @@ import { logActivity } from "./activity-logs";
 import { auth } from "@/auth";
 import { customCache, invalidateCacheTag } from "@/lib/cache";
 
+const MAX_PAGE_SIZE = 100;
+const CACHEABLE_NAME_PATTERNS = new Set([
+  "Graphics",
+  "Processor|Intel|AMD",
+  "SSD|HDD|NVMe",
+  "RAM|DDR",
+  "Case|Tower",
+]);
+
 export async function getProducts(
   query = {},
   page = 1,
   limit = 10,
   select = "name slug price mrp discountPercentage offerPrice thumbnail images averageRating totalReviews category status createdAt shortDescription description"
 ) {
+  // Callers are client-reachable server actions: bound the page size so a
+  // request can't ask for an unbounded result set.
+  limit = Math.min(Math.max(Math.trunc(Number(limit)) || 10, 1), MAX_PAGE_SIZE);
+  page = Math.max(Math.trunc(Number(page)) || 1, 1);
+
   const queryStr = JSON.stringify(query);
   const cacheKey = `products-list-${queryStr}-${page}-${limit}-${select}`;
 
   try {
-    return await customCache(
+    // Free-text searches have effectively unbounded distinct keys; caching them
+    // only fills the shared data cache with entries that are rarely re-read.
+    // The fixed homepage tab patterns are the only name filters worth caching.
+    const nameFilter = (query as { name?: { $regex?: unknown } }).name;
+    const cacheable =
+      nameFilter === undefined ||
+      (typeof nameFilter === "object" &&
+        typeof nameFilter?.$regex === "string" &&
+        CACHEABLE_NAME_PATTERNS.has(nameFilter.$regex));
+    const run =
       async () => {
         await dbConnect();
         const skip = (page - 1) * limit;
@@ -42,10 +65,9 @@ export async function getProducts(
           total,
           pages: Math.ceil(total / limit),
         };
-      },
-      cacheKey,
-      ["products"]
-    );
+      };
+    if (!cacheable) return await run();
+    return await customCache(run, cacheKey, ["products"]);
   } catch (error) {
     console.error("Error fetching products:", error);
     return { products: [], total: 0, pages: 0 };
@@ -162,6 +184,24 @@ export async function getProductById(id: string) {
     console.error(`Error fetching product by ID (${id}):`, error);
     return null;
   }
+}
+
+/**
+ * Same as getProductById but for ISR-rendered pages: an unknown/malformed id
+ * resolves to null (404), while a transient DB error is rethrown so the page
+ * is NOT cached as a 404 (Next keeps serving the last good render).
+ */
+export async function getPublicProductById(id: string) {
+  if (!/^[0-9a-fA-F]{24}$/.test(id)) return null;
+  return customCache(
+    async () => {
+      await dbConnect();
+      const product = await Product.findById(id).populate("category").lean();
+      return product ? JSON.parse(JSON.stringify(product)) : null;
+    },
+    `product-detail-${id}`,
+    ["products", `product-${id}`]
+  );
 }
 
 export async function rateProduct(productId: string, rating: number, review?: string, userId?: string) {

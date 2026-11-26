@@ -59,10 +59,11 @@ const revenueData = [
   { day: "Sun", amount: 700 },
 ];
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useVisiblePolling } from "@/hooks/use-visible-polling";
 import { getOrders } from "@/actions/order";
 import { getProducts } from "@/actions/product";
-import { getCustomers } from "@/actions/customer";
+import { getCustomerCount } from "@/actions/customer";
 import { getAnalyticsData } from "@/actions/analytics";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
@@ -73,22 +74,30 @@ export default function DashboardPage() {
   const [analytics, setAnalytics] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
+  // Analytics scans all orders/users, so it refreshes less often than the
+  // lightweight counters (every ANALYTICS_EVERY_N polls, i.e. ~60s).
+  const ANALYTICS_EVERY_N = 4;
+  const pollCount = useRef(0);
+
   useEffect(() => {
-    fetchDashboardData();
-    const interval = setInterval(() => {
-      fetchDashboardData();
-    }, 15000); // 15 seconds real-time update
-    return () => clearInterval(interval);
+    fetchDashboardData(true);
   }, []);
 
-  async function fetchDashboardData() {
-    setLoading(true);
+  // 15s refresh, but only while the tab is visible and never overlapping.
+  useVisiblePolling(() => {
+    pollCount.current += 1;
+    return fetchDashboardData(pollCount.current % ANALYTICS_EVERY_N === 0);
+  }, 15000);
+
+  async function fetchDashboardData(includeAnalytics: boolean) {
+    // Only show the skeleton on first load; background refreshes are silent.
+    if (!stats) setLoading(true);
     try {
-      const [ordersData, productsData, customersData, analyticsData] = await Promise.all([
+      const [ordersData, productsData, customerCount, analyticsData] = await Promise.all([
         getOrders(),
         getProducts({}, 1, 5),
-        getCustomers(),
-        getAnalyticsData()
+        getCustomerCount(),
+        includeAnalytics ? getAnalyticsData() : Promise.resolve(null)
       ]);
 
       const totalRevenue = ordersData.orders.reduce((acc: number, order: any) => acc + (order.totalAmount || 0), 0);
@@ -96,12 +105,12 @@ export default function DashboardPage() {
       setStats({
         revenue: totalRevenue,
         orders: ordersData.orders.length,
-        customers: customersData.length,
+        customers: customerCount,
         products: productsData.total
       });
 
       setRecentOrders(ordersData.orders.slice(0, 5));
-      if (analyticsData.success) {
+      if (analyticsData?.success) {
         setAnalytics(analyticsData);
       }
     } catch (error) {

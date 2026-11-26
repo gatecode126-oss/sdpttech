@@ -7,6 +7,7 @@ import { FiFilter, FiSearch, FiGrid, FiList } from "react-icons/fi";
 import { CartContext } from "@/CartContext";
 import { WishlistContext } from "@/WishlistContext";
 import { getProducts } from "@/actions/product";
+import { escapeRegex } from "@/lib/utils";
 import "./ShopPage.css";
 import "@/components/frontend/Skeleton.css";
 import dynamic from "next/dynamic";
@@ -119,7 +120,7 @@ export default function ShopClient({
       }
       
       if (initialQ) {
-        query.name = { $regex: initialQ, $options: "i" };
+        query.name = { $regex: escapeRegex(initialQ.slice(0, 100)), $options: "i" };
       }
 
       query.offerPrice = { $gte: selectedPrice.min, $lte: selectedPrice.max };

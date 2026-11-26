@@ -1,4 +1,4 @@
-import { updateTag } from "next/cache";
+import { unstable_cache, updateTag } from "next/cache";
 
 let redis: any = null;
 
@@ -11,9 +11,6 @@ if (process.env.REDIS_URL) {
     console.warn("Failed to initialize Redis client, falling back to memory cache:", e);
   }
 }
-
-// Global in-memory cache map to prevent Next.js 2MB unstable_cache limits and unhandled rejections
-const memoryCache = new Map<string, { data: any; expiry: number; tags: string[] }>();
 
 export async function customCache<T>(
   fetchFn: () => Promise<T>,
@@ -35,24 +32,11 @@ export async function customCache<T>(
     }
   }
 
-  // Check In-Memory Cache
-  const now = Date.now();
-  const cachedItem = memoryCache.get(key);
-  if (cachedItem && cachedItem.expiry > now) {
-    return cachedItem.data as T;
-  }
-
-  // Fetch fresh data
-  const data = await fetchFn();
-
-  // Store in memory cache with expiration time
-  memoryCache.set(key, {
-    data,
-    expiry: now + revalidateSeconds * 1000,
-    tags
-  });
-
-  return data;
+  // Default: Next.js Data Cache. Unlike a per-process Map, this is shared across
+  // serverless instances and invalidated by tag (updateTag/revalidateTag), so a
+  // change made on one instance is visible everywhere and cold instances don't
+  // each re-query the database.
+  return unstable_cache(fetchFn, [key], { tags, revalidate: revalidateSeconds })();
 }
 
 export async function invalidateCacheTag(tag: string) {
@@ -68,13 +52,6 @@ export async function invalidateCacheTag(tag: string) {
     }
   }
   
-  // Invalidate matching tags in the in-memory cache
-  for (const [key, item] of memoryCache.entries()) {
-    if (item.tags.includes(tag)) {
-      memoryCache.delete(key);
-    }
-  }
-
   try {
     updateTag(tag);
   } catch (e) {

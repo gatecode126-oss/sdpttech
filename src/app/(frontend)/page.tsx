@@ -12,7 +12,9 @@ import { getCategories } from "@/actions/category";
 import { getProducts } from "@/actions/product";
 import { getBanner } from "@/actions/banner";
 
-export const dynamic = "force-dynamic";
+// ISR: all data here is public and already tag-cached; mutations in the admin
+// actions call revalidatePath("/"), so this is only a safety-net TTL.
+export const revalidate = 300;
 
 export default async function Home() {
   // Fetch homepage data concurrently on the server

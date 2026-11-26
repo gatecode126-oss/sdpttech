@@ -1,7 +1,8 @@
 import { auth } from "./auth.edge";
 import { NextResponse } from "next/server";
+import type { NextFetchEvent, NextRequest } from "next/server";
 
-export default auth((req) => {
+function routeTenant(req: NextRequest) {
   const pathname = req.nextUrl.pathname;
   const hostname = req.headers.get("host") || "";
 
@@ -53,6 +54,11 @@ export default auth((req) => {
     return NextResponse.rewrite(rewriteUrl);
   }
 
+  return null;
+}
+
+const adminGuard = auth((req) => {
+  const pathname = req.nextUrl.pathname;
   // 3. Admin panel checks (for main domain)
   const isLoggedIn = !!req.auth;
   const role = req.auth?.user?.role;
@@ -142,6 +148,18 @@ export default auth((req) => {
   return null;
 });
 
+// Session decoding (auth()) is only needed for the admin panel. Tenant
+// rewrites and public storefront pages skip it entirely.
+export default function proxy(req: NextRequest, event: NextFetchEvent) {
+  const tenant = routeTenant(req);
+  if (tenant) return tenant;
+  if (req.nextUrl.pathname.startsWith("/admin")) {
+    return (adminGuard as any)(req, event);
+  }
+  return NextResponse.next();
+}
+
 export const config = {
-  matcher: ["/((?!api/auth|_next/static|_next/image|favicon.ico).*)"],
+  // Skip static files (anything with an extension) so they never invoke the proxy.
+  matcher: ["/((?!api/auth|_next/static|_next/image|favicon.ico|.*\\..*).*)"],
 };

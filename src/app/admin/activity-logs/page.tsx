@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, Fragment } from "react";
+import { useVisiblePolling } from "@/hooks/use-visible-polling";
 import {
   Activity,
   Search,
@@ -105,6 +106,7 @@ export default function ActivityLogsPage() {
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
 
   const LIMIT = 30;
+  const LOG_POLL_MS = 10000;
 
   const fetchLogs = useCallback(async (p = page, isSilent = false) => {
     if (!isSilent) setLoading(true);
@@ -152,13 +154,8 @@ export default function ActivityLogsPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page]);
 
-  // Real-time polling
-  useEffect(() => {
-    const interval = setInterval(() => {
-      fetchLogs(page, true);
-    }, 4000); // Poll every 4 seconds
-    return () => clearInterval(interval);
-  }, [fetchLogs, page]);
+  // Near-real-time refresh: visible tab only, no overlapping requests.
+  useVisiblePolling(() => fetchLogs(page, true), LOG_POLL_MS);
 
   const handleClearAll = async () => {
     if (!confirm("Clear ALL activity logs? This action cannot be undone.")) return;
